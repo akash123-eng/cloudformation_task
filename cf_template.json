@@ -1,0 +1,286 @@
+{
+   "AWSTemplateFormatVersion": "2010-09-09",
+   "Parameters": {
+      "KeyPair": {
+      "Description": "Name of the keypair to use for SSH access",
+      "Type": "String"
+       }
+      },   
+   "Resources": {
+    "vpc": {
+      "Type": "AWS::EC2::VPC",
+      "Properties": {
+        "CidrBlock": "172.31.0.0/16",
+        "InstanceTenancy": "default",
+        "EnableDnsSupport": "true",
+        "EnableDnsHostnames": "true"
+      }
+    },
+    "PublicSubnet": {
+      "Type": "AWS::EC2::Subnet",
+      "DependsOn": ["vpc", "attachGateway"],
+      "Properties": {
+        "CidrBlock": "172.31.0.0/18",
+        "AvailabilityZone": "us-west-2a",
+        "VpcId": {"Ref": "vpc"}
+      }
+    },
+    "PublicSubnet2": {
+      "Type": "AWS::EC2::Subnet",
+      "DependsOn": ["vpc", "attachGateway"],
+      "Properties": {
+        "CidrBlock": "172.31.64.0/18",
+        "AvailabilityZone": "us-west-2b",
+        "VpcId": {"Ref": "vpc"}
+      }
+    },	
+    "privateSubnet1": {
+      "Type": "AWS::EC2::Subnet",
+      "DependsOn": ["vpc", "attachGateway"],
+      "Properties": {
+        "CidrBlock": "172.31.128.0/18",
+        "AvailabilityZone": "us-west-2c",
+        "VpcId": {"Ref": "vpc"}
+      }
+    },
+    "privateSubnet2": {
+      "Type": "AWS::EC2::Subnet",
+      "DependsOn": ["vpc", "attachGateway"],
+      "Properties": {
+        "CidrBlock": "172.31.192.0/18",
+        "AvailabilityZone": "us-west-2d",
+        "VpcId": {"Ref": "vpc"}
+      }
+    },
+    "inetGateway": {
+      "Type": "AWS::EC2::InternetGateway",
+      "DependsOn": ["vpc"]
+    },
+    "attachGateway": {
+      "Type": "AWS::EC2::VPCGatewayAttachment",
+      "DependsOn": ["vpc", "inetGateway"],
+      "Properties": {
+        "VpcId": {"Ref": "vpc"},
+        "InternetGatewayId": {"Ref": "inetGateway"}
+      }
+    },
+    "rtbPublic": {
+      "Type": "AWS::EC2::RouteTable",
+      "DependsOn": ["vpc", "attachGateway"],
+      "Properties": {
+        "VpcId": {"Ref": "vpc"}
+      }
+    },
+    "routePublic": {
+      "Type": "AWS::EC2::Route",
+      "DependsOn": ["rtbPublic"],
+      "Properties": {
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "RouteTableId": {"Ref": "rtbPublic"},
+        "GatewayId": {"Ref": "inetGateway"}
+      },
+      "DependsOn": "attachGateway"
+    },
+    "subnetRouteTableAssociationPublic1": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "DependsOn": ["rtbPublic", "PublicSubnet"],
+      "Properties": {
+        "RouteTableId": {"Ref": "rtbPublic"},
+        "SubnetId": {"Ref": "PublicSubnet"}
+      }
+    },
+    "subnetRouteTableAssociationPublic2": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "DependsOn": ["rtbPublic", "PublicSubnet2"],
+      "Properties": {
+        "RouteTableId": {"Ref": "rtbPublic"},
+        "SubnetId": {"Ref": "PublicSubnet2"}
+      }
+    },	
+    "rtbPrivate": {
+      "Type": "AWS::EC2::RouteTable",
+      "DependsOn": ["vpc"],
+      "Properties": {
+        "VpcId": {"Ref": "vpc"}
+      }
+    },
+    "subnetRouteTableAssociationPrivate1": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "DependsOn": ["rtbPublic", "privateSubnet1"],
+      "Properties": {
+        "RouteTableId": {"Ref": "rtbPrivate"},
+        "SubnetId": {"Ref": "privateSubnet1"}
+      }
+    },
+    "subnetRouteTableAssociationPrivate2": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "DependsOn": ["rtbPublic", "privateSubnet2"],
+      "Properties": {
+        "RouteTableId": {"Ref": "rtbPrivate"},
+        "SubnetId": {"Ref": "privateSubnet2"}
+      }
+    },
+    "DbSubnetGroup": {
+        "Type": "AWS::RDS::DBSubnetGroup",
+        "Properties": {
+            "DBSubnetGroupDescription": "For Launching RDS",
+            "DBSubnetGroupName": "db-subnet-group",
+            "SubnetIds": [
+                {
+                    "Ref": "privateSubnet1"
+                },
+                {
+                    "Ref": "privateSubnet2"
+                }
+            ]
+        }
+    },	
+	"MyDB": {
+      "Type": "AWS::RDS::DBInstance",
+      "Properties": {
+		 "AvailabilityZone": "us-west-2c",
+		 "DBSubnetGroupName": { "Ref": "DbSubnetGroup" },
+		 "AllocatedStorage" : "10",
+         "DBName": "TestDb",
+         "DBInstanceClass": "db.t2.micro",
+         "Engine": "MySQL",
+         "EngineVersion": "5.7.22",
+		 "Port": "3306",
+         "MasterUsername": "admin",
+         "MasterUserPassword": "admin123"
+        }
+	},
+    "ELBSecurityGroup" : {
+      "Type" : "AWS::EC2::SecurityGroup",
+      "Properties" : {
+        "GroupDescription" : "Enable HTTP access",
+        "VpcId" : { "Ref" : "vpc" },
+        "SecurityGroupIngress" : [
+          {"IpProtocol" : "tcp","FromPort" : "80","ToPort" : "80","CidrIp" : "0.0.0.0/0"} ]
+       }
+    },		
+    "WebServerSecurityGroup" : {
+      "Type" : "AWS::EC2::SecurityGroup",
+      "Properties" : {
+        "GroupDescription" : "Enable HTTP access to servers only from load balancer",
+        "VpcId" : { "Ref" : "vpc" },
+        "SecurityGroupIngress" : [
+          {"IpProtocol" : "tcp","FromPort" : "80","ToPort" : "80","SourceSecurityGroupId": { "Ref": "ELBSecurityGroup" }} ]
+       }
+    },	
+    "WebServerInstanceA": {
+      "Type": "AWS::EC2::Instance",
+      "Properties": {
+        "InstanceType": "t2.micro",
+        "ImageId": "ami-079596bf7a949ddf8",
+        "NetworkInterfaces" : [{
+          "GroupSet"                 : [{"Ref": "WebServerSecurityGroup"}],
+          "AssociatePublicIpAddress" : "true",
+          "DeviceIndex"              : "0",
+          "DeleteOnTermination"      : "true",
+          "SubnetId"                 : {"Ref": "PublicSubnet"}
+        }],
+        "KeyName": {
+          "Ref": "KeyPair"
+        },
+        "UserData": {
+          "Fn::Base64": {
+            "Fn::Join": [
+              "\n",
+              [
+                "#!/bin/bash",
+                "sudo yum install httpd -y",
+                "echo \"<html><body><h1>Server A</h1></body></html>\" > /var/www/html/index.html",
+				"sudo systemctl start httpd"
+              ]
+            ]
+          }
+        }
+      }
+    },
+    "WebServerInstanceB": {
+      "Type": "AWS::EC2::Instance",
+      "Properties": {
+        "InstanceType": "t2.micro",
+        "ImageId": "ami-079596bf7a949ddf8",
+        "NetworkInterfaces" : [{
+          "GroupSet"                 : [{"Ref": "WebServerSecurityGroup"}],
+          "AssociatePublicIpAddress" : "true",
+          "DeviceIndex"              : "0",
+          "DeleteOnTermination"      : "true",
+          "SubnetId"                 : {"Ref": "PublicSubnet2"}
+        }],
+        "KeyName": {
+          "Ref": "KeyPair"
+        },
+        "UserData": {
+          "Fn::Base64": {
+            "Fn::Join": [
+              "\n",
+              [
+                "#!/bin/bash",
+                "sudo yum install httpd -y",
+                "echo \"<html><body><h1>Server B</h1></body></html>\" > /var/www/html/index.html",
+				"sudo systemctl start httpd"
+              ]
+            ]
+          }
+        }
+      }
+    },	
+    "ApplicationLoadBalancer": {
+        "Type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+        "Properties": {
+            "Scheme": "internet-facing",
+            "Subnets": [
+                {"Ref": "PublicSubnet"},
+				{"Ref": "PublicSubnet2"}
+                
+            ],
+			"SecurityGroups": [ { "Ref": "ELBSecurityGroup" } ],
+            "Type": "application",
+            "IpAddressType": "ipv4"
+        }
+    },
+    "TargetGroup": {
+        "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+        "Properties": {
+            "Port": 80,
+            "Protocol": "HTTP",
+            "Targets": [
+                {
+                    "Id": {
+                        "Ref": "WebServerInstanceA"
+                    }
+                },
+                {
+                    "Id": {
+                        "Ref": "WebServerInstanceB"
+                    }
+                }
+            ],
+            "VpcId": {
+                "Ref": "vpc"
+            }
+        }
+    },
+    "Listener": {
+        "Type": "AWS::ElasticLoadBalancingV2::Listener",
+        "Properties": {
+            "DefaultActions": [
+                {
+                    "Type": "forward",
+                    "TargetGroupArn": {
+                        "Ref": "TargetGroup"
+                    }
+                }
+            ],
+            "LoadBalancerArn": {
+                "Ref": "ApplicationLoadBalancer"
+            },
+            "Port": 80,
+            "Protocol": "HTTP"
+        }
+    }	
+	}
+	}
