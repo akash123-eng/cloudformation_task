@@ -286,7 +286,7 @@
    "Outputs" : {
        "LoadBalancerUrl" : {
        "Value" : { "Fn::Join" : ["", ["http://", { "Fn::GetAtt" : [ "ApplicationLoadBalancer", "DNSName" ]} ]]},
-       "Description" : "Url to Access load balanced websites"
+       "Description" : "Url to Access load balanced website"
     }
     }	
 	}
